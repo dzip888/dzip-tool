@@ -1,15 +1,4 @@
-<!
-// 大文件警告弹窗
-document.getElementById('largeFileClose').addEventListener('click', function() {
-  document.getElementById('largeFileMask').classList.remove('on');
-});
-document.getElementById('largeFileOk').addEventListener('click', function() {
-  document.getElementById('largeFileMask').classList.remove('on');
-});
-document.getElementById('largeFileMask').addEventListener('click', function(e) {
-  if (e.target === this) this.classList.remove('on');
-});
-DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -594,6 +583,16 @@ function showCopied() {
 activateBtn.addEventListener('click', function() { activate(codeInput.value); });
 codeInput.addEventListener('keydown', function(e) { if (e.key === 'Enter') activate(codeInput.value); });
 document.getElementById('maskClose').addEventListener('click', hideMask);
+// 大文件警告弹窗
+document.getElementById('largeFileClose').addEventListener('click', function() {
+  document.getElementById('largeFileMask').classList.remove('on');
+});
+document.getElementById('largeFileOk').addEventListener('click', function() {
+  document.getElementById('largeFileMask').classList.remove('on');
+});
+document.getElementById('largeFileMask').addEventListener('click', function(e) {
+  if (e.target === this) this.classList.remove('on');
+});
 /* 联系方式已写在静态 HTML 中，含点击复制 */
 
 /* ---------- 通用 UI ---------- */
