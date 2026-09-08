@@ -778,6 +778,13 @@ async function doExtract(file) {
 
 /* ---------- 入口：授权检查 + 解压 ---------- */
 function handleFile(file) {
+  // 大文件检测：超过 1GB 提示联系管理员
+  var SIZE_LIMIT = 1024 * 1024 * 1024;
+  if (file.size > SIZE_LIMIT) {
+    var gb = (file.size / (1024*1024*1024)).toFixed(2);
+    setStatus('文件较大（' + gb + ' GB），浏览器版暂不支持超大文件解压。请使用 Windows 本地版（支持任意大小），或联系管理员微信：league_L', 'warn');
+    return;
+  }
   if (isActivated()) {
     doExtract(file);
     return;
