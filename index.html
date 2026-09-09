@@ -272,7 +272,7 @@
 <body>
 <div class="app">
   <h1>万能解压工具</h1>
-  <p class="sub">支持 dzip / zip / 7z / rar / tar / gz / bz2 / xz 等 · 自动修复 UA 伪装 · 全程本地处理不上传</p>
+  <p class="sub">支持 dzip / zip / 7z / rar / tar / gz / bz2 / xz / zstd / jar / apk / cab 等 · 支持分卷压缩 · 自动修复 UA 伪装 · 全程本地处理不上传</p>
 
   <div class="lic-banner" id="licBanner"></div>
 
@@ -281,7 +281,7 @@
       <button class="btn" id="btn">选择压缩包文件</button>
       <p>在电脑上也可直接拖文件到本页面</p>
     </div>
-    <input type="file" id="file" accept="*/*">
+    <input type="file" id="file" accept="*/*" multiple>
     <div id="status"></div>
     <div class="bar-wrap" id="barwrap"><div id="bar"></div></div>
   </div>
@@ -290,12 +290,13 @@
 
   <div class="tips">
     使用提示：<br>
-    · 支持 zip、dzip、7z、rar、tar、tar.gz、gz、bz2、xz 等常见格式<br>
+    · 支持 zip、dzip、7z、rar、tar、tar.gz、gz、bz2、xz、zstd、jar、apk、cab、zipx 等常见格式<br>
+    · 支持分卷压缩包（.001/.002 或 .part1.rar/.part2.rar），需同时选中所有分卷文件<br>
     · 每个设备首次解压免费，之后需要激活码<br>
     · 激活码一码一设备，请勿外传；因外传造成的损失由使用者自行承担<br>
     · 大文件（几百 MB）解压需要 1~3 分钟，7z/rar 解压时界面可能短暂无响应，属正常<br>
-    · 超大文件建议在电脑上用本工具或 WinRAR/7-Zip 解压<br>
-    · 加密压缩包、rar 分卷（part1.rar）暂不支持，请用电脑版 WinRAR/7-Zip<br>
+    · 超过 1GB 的超大文件建议使用 Windows 本地版，联系微信 league_L 获取<br>
+    · 加密压缩包暂不支持，请用电脑版 WinRAR/7-Zip<br>
     · 苹果手机用 Safari（iOS 16.4+）打开，安卓用 Chrome/Edge
   </div>
 
@@ -622,11 +623,12 @@ function detectFormat(u8, name) {
   if (u8.length >= 2 && u8[0] === 0x1f && u8[1] === 0x8b) return 'gzip';
   if (u8.length >= 3 && u8[0] === 0x42 && u8[1] === 0x5a && u8[2] === 0x68) return 'bzip2';
   if (u8.length >= 5 && u8[0] === 0xfd && u8[1] === 0x37 && u8[2] === 0x7a && u8[3] === 0x58 && u8[4] === 0x5a) return 'xz';
-  if (ext === 'tar' || ext === 'tgz' || ext === 'tbz2' || ext === 'tzst' || ext === 'zst') return 'tar';
+  if (u8.length >= 4 && u8[0] === 0x28 && u8[1] === 0xb5 && u8[2] === 0x2f && u8[3] === 0xfd) return 'zstd';
+  if (ext === 'tar' || ext === 'tgz' || ext === 'tbz2' || ext === 'tzst') return 'tar';
   return 'unknown';
 }
 
-var FMT_NAMES = { zip: 'ZIP', uazip: 'ZIP(UA伪装)', '7z': '7Z', rar: 'RAR', gzip: 'GZIP', bzip2: 'BZIP2', xz: 'XZ', tar: 'TAR' };
+var FMT_NAMES = { zip: 'ZIP', uazip: 'ZIP(UA伪装)', '7z': '7Z', rar: 'RAR', gzip: 'GZIP', bzip2: 'BZIP2', xz: 'XZ', zstd: 'ZSTD', tar: 'TAR' };
 
 /* ---------- UA 修复 ---------- */
 function fixUaZip(u8) {
@@ -829,6 +831,10 @@ async function doExtract(file) {
     return;
   }
   var u8 = new Uint8Array(buf);
+  doExtractWithData(u8, file.name);
+}
+
+async function doExtractWithData(u8, name) {
   setBar(20);
 
   var fmt = detectFormat(u8, file.name);
@@ -881,14 +887,63 @@ async function doExtract(file) {
   renderEntries(file.name, entries);
 }
 
+/* ---------- 分卷检测与合并 ---------- */
+function detectVolumes(files) {
+  if (files.length < 2) return null;
+  var volumes = [];
+  var hasVolume = false;
+  for (var i = 0; i < files.length; i++) {
+    var f = files[i];
+    var n = f.name.toLowerCase();
+    var m;
+    if ((m = n.match(/\.(\d{3})$/))) {
+      volumes.push({ file: f, index: parseInt(m[1]), type: '7z' });
+      hasVolume = true;
+    }
+    else if ((m = n.match(/\.part(\d+)\.rar$/))) {
+      volumes.push({ file: f, index: parseInt(m[1]), type: 'rar' });
+      hasVolume = true;
+    }
+    else if ((m = n.match(/\.r(\d{2})$/))) {
+      volumes.push({ file: f, index: parseInt(m[1]), type: 'rar' });
+      hasVolume = true;
+    }
+  }
+  if (!hasVolume || volumes.length < 2) return null;
+  volumes.sort(function(a, b) { return a.index - b.index; });
+  return volumes;
+}
+
+async function mergeVolumes(volumes) {
+  var totalSize = 0;
+  var datas = [];
+  for (var i = 0; i < volumes.length; i++) {
+    var buf = await volumes[i].file.arrayBuffer();
+    var u8 = new Uint8Array(buf);
+    datas.push(u8);
+    totalSize += u8.length;
+  }
+  var merged = new Uint8Array(totalSize);
+  var offset = 0;
+  for (var i = 0; i < datas.length; i++) {
+    merged.set(datas[i], offset);
+    offset += datas[i].length;
+  }
+  return merged;
+}
+
 /* ---------- 入口：授权检查 + 解压 ---------- */
+var SIZE_LIMIT = 1024 * 1024 * 1024;
+
+function showLargeFileWarning(size) {
+  var gb = (size / (1024*1024*1024)).toFixed(2);
+  document.getElementById('largeFileSize').textContent = '文件大小：' + gb + ' GB';
+  document.getElementById('largeFileMask').classList.add('on');
+}
+
 function handleFile(file) {
-  // 大文件检测：超过 1GB 提示联系管理员
-  var SIZE_LIMIT = 1024 * 1024 * 1024;
   if (file.size > SIZE_LIMIT) {
-    var gb = (file.size / (1024*1024*1024)).toFixed(2);
-    document.getElementById('largeFileSize').textContent = '文件大小：' + gb + ' GB';
-    document.getElementById('largeFileMask').classList.add('on');
+    showLargeFileWarning(file.size);
     return;
   }
   if (isActivated()) {
@@ -906,11 +961,53 @@ function handleFile(file) {
   showMask();
 }
 
+async function handleFiles(files) {
+  if (files.length === 1) {
+    handleFile(files[0]);
+    return;
+  }
+  var volumes = detectVolumes(files);
+  if (!volumes) {
+    setStatus('多文件仅支持分卷压缩包，请同时选中所有分卷文件（如 .001/.002 或 .part1.rar/.part2.rar）', 'err');
+    return;
+  }
+  var totalSize = 0;
+  for (var i = 0; i < volumes.length; i++) totalSize += volumes[i].file.size;
+  if (totalSize > SIZE_LIMIT) {
+    showLargeFileWarning(totalSize);
+    return;
+  }
+  if (!isActivated() && freeUsed()) {
+    pendingFile = volumes[0].file;
+    showMask();
+    return;
+  }
+  if (!isActivated() && !freeUsed()) {
+    setFreeUsed();
+    updateBanner();
+    setStatus('本次为免费解压（本设备仅此一次），下次需要激活码', 'ok');
+  }
+  setStatus('检测到分卷压缩包（' + volumes.length + ' 个分卷），正在合并…');
+  setBar(15);
+  try {
+    var merged = await mergeVolumes(volumes);
+    setBar(30);
+    setStatus('合并完成，开始解压…', 'ok');
+    doExtractWithData(merged, volumes[0].file.name);
+  } catch (e) {
+    setStatus('分卷合并失败：' + (e.message || e), 'err');
+  }
+}
+
 document.getElementById('btn').addEventListener('click', function() {
   fileInput.click();
 });
 fileInput.addEventListener('change', function() {
-  if (fileInput.files && fileInput.files[0]) handleFile(fileInput.files[0]);
+  if (fileInput.files && fileInput.files.length > 0) {
+    var files = [];
+    for (var i = 0; i < fileInput.files.length; i++) files.push(fileInput.files[i]);
+    handleFiles(files);
+  }
   fileInput.value = '';
 });
 ['dragenter', 'dragover'].forEach(function(ev) {
@@ -920,8 +1017,10 @@ fileInput.addEventListener('change', function() {
   drop.addEventListener(ev, function(e) { e.preventDefault(); drop.classList.remove('active'); });
 });
 drop.addEventListener('drop', function(e) {
-  if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]) {
-    handleFile(e.dataTransfer.files[0]);
+  if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+    var files = [];
+    for (var i = 0; i < e.dataTransfer.files.length; i++) files.push(e.dataTransfer.files[i]);
+    handleFiles(files);
   }
 });
 
